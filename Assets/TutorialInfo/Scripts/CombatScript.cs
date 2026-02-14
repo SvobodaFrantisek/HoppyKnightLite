@@ -3,11 +3,13 @@ using UnityEngine.InputSystem;
 
 public class CombatScript : MonoBehaviour
 {
-    [Header("Nastavení")]
-    public float attackCooldown = 0.8f;   // Jak èasto mùže sekat (sekundy)
-    public Animator animator;             // Odkaz na animátor
+    [Header("Nastavení útoku")]
+    public float attackCooldown = 0.8f;
+    public Animator animator;
 
-    // Interní promìnné
+    [Header("VFX")]
+    public GameObject traileffect; // empty object se TrailRendererem (na špièce meèe)
+
     private PlayerInput _playerInput;
     private InputAction _attackAction;
     private float _lastAttackTime;
@@ -15,14 +17,14 @@ public class CombatScript : MonoBehaviour
     void Awake()
     {
         _playerInput = GetComponent<PlayerInput>();
-        // Automaticky najdeme Animator, pokud není pøiøazený
         if (animator == null) animator = GetComponentInChildren<Animator>();
+
+        // pro jistotu a je trail na zaèátku vypnutý
+        if (traileffect != null) traileffect.SetActive(false);
     }
 
     void OnEnable()
     {
-        // Najdeme akci "Attack" v Input Systemu
-        // Ujistìte se, že máte v Input Actions akci pojmenovanou "Attack"
         _attackAction = _playerInput.actions.FindAction("Attack");
         _attackAction?.Enable();
     }
@@ -34,20 +36,36 @@ public class CombatScript : MonoBehaviour
 
     void Update()
     {
-        // Pokud hráè zmáèkl útok A ubìhl èas cooldownu
-        if (_attackAction.triggered && Time.time >= _lastAttackTime + attackCooldown)
+        if (_attackAction != null && _attackAction.triggered && CanAttack())
         {
-            PerformSlash();
-            _lastAttackTime = Time.time;
+            Attack();
         }
     }
 
-    void PerformSlash()
+    bool CanAttack()
     {
-        // Spustíme animaci seknutí
+        return Time.time >= _lastAttackTime + attackCooldown;
+    }
+
+    void Attack()
+    {
+        _lastAttackTime = Time.time;
+
         if (animator != null)
         {
             animator.SetTrigger("Attack");
         }
+    }
+
+    // === Tohle volej z Animation Eventù v animaci Attack ===
+
+    public void TrailOn()
+    {
+        if (traileffect != null) traileffect.SetActive(true);
+    }
+
+    public void TrailOff()
+    {
+        if (traileffect != null) traileffect.SetActive(false);
     }
 }
