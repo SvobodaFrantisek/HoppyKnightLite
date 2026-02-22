@@ -81,7 +81,10 @@ public class FPSController : MonoBehaviour
 
     void HandleMovement()
     {
+        
+
         Vector2 moveInput = _moveAction.ReadValue<Vector2>();
+        if (Cursor.lockState != CursorLockMode.Locked) moveInput = Vector2.zero;
 
         // --- Gravitace a Skok ---
         if (_cc.isGrounded)
@@ -164,7 +167,9 @@ public class FPSController : MonoBehaviour
         {
             if (playerCamera == null || cameraTarget == null) return;
 
-            Vector2 lookInput = _lookAction.ReadValue<Vector2>();
+        if (Cursor.lockState != CursorLockMode.Locked) return;
+
+        Vector2 lookInput = _lookAction.ReadValue<Vector2>();
             _cameraYaw += lookInput.x * mouseSensitivity;
             _cameraPitch -= lookInput.y * mouseSensitivity;
             _cameraPitch = Mathf.Clamp(_cameraPitch, pitchLimits.x, pitchLimits.y);

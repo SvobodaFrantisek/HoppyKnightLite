@@ -3,12 +3,12 @@ using UnityEngine.InputSystem;
 
 public class CombatScript : MonoBehaviour
 {
-    [Header("Nastavení útoku")]
+   
     public float attackCooldown = 0.8f;
     public Animator animator;
 
-    [Header("VFX")]
-    public GameObject traileffect; // empty object se TrailRendererem (na špièce meèe)
+   
+    public GameObject traileffect; 
 
     private PlayerInput _playerInput;
     private InputAction _attackAction;
@@ -19,7 +19,6 @@ public class CombatScript : MonoBehaviour
         _playerInput = GetComponent<PlayerInput>();
         if (animator == null) animator = GetComponentInChildren<Animator>();
 
-        // pro jistotu a je trail na zaèátku vypnutı
         if (traileffect != null) traileffect.SetActive(false);
     }
 
@@ -36,6 +35,7 @@ public class CombatScript : MonoBehaviour
 
     void Update()
     {
+        if (Cursor.lockState != CursorLockMode.Locked) return;
         if (_attackAction != null && _attackAction.triggered && CanAttack())
         {
             Attack();
@@ -57,7 +57,7 @@ public class CombatScript : MonoBehaviour
         }
     }
 
-    // === Tohle volej z Animation Eventù v animaci Attack ===
+   
 
     public void TrailOn()
     {
