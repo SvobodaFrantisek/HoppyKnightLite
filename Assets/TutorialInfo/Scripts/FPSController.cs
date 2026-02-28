@@ -9,15 +9,18 @@ public class FPSController : MonoBehaviour
     public float rotationSpeed = 10f;
     public float jumpSpeed = 8f;
     public float gravity = 20f;
-    public float groundedStickForce = 5f; // Zvýšeno pro lepší stabilitu na zemi
-    public float jumpTimeout = 0.5f; // Ochrana proti dvojitému zmáčknutí
+    public float groundedStickForce = 5f;
+    public float jumpTimeout = 0.5f;
 
-    [Header("Camera Settings (3rd Person)")]
-    public Transform playerCamera;
-    public Transform cameraTarget;
-    public float cameraDistanceFromTarget = 5f;
-    public float mouseSensitivity = 1f;
-    public Vector2 pitchLimits = new Vector2(-40f, 70f);
+    public bool hasDoubleJump = false;
+    public int jumpCount = 0;
+
+    public float climbSpeed = 4f;
+    public float wallCheckDistance = 0.5f;
+    public bool isClimbing = false;
+
+    // Přidáno pro detekci výšvihu
+    private bool _wasClimbing = false;
 
     [Header("Animation")]
     public Animator animator;
@@ -25,12 +28,9 @@ public class FPSController : MonoBehaviour
     // Interní proměnné
     private PlayerInput _playerInput;
     private InputAction _moveAction;
-    private InputAction _lookAction;
     private InputAction _jumpAction;
     private CharacterController _cc;
     private Vector3 _velocity;
-    private float _cameraYaw;
-    private float _cameraPitch;
 
     // Časovač pro skok
     private float _jumpTimeoutDelta;
@@ -41,17 +41,14 @@ public class FPSController : MonoBehaviour
         _playerInput = GetComponent<PlayerInput>();
 
         if (animator == null) animator = GetComponentInChildren<Animator>();
-        if (cameraTarget == null) cameraTarget = transform;
     }
 
     void OnEnable()
     {
         _moveAction = _playerInput.actions.FindAction("Move");
-        _lookAction = _playerInput.actions.FindAction("Look");
         _jumpAction = _playerInput.actions.FindAction("Jump");
 
         _moveAction?.Enable();
-        _lookAction?.Enable();
         _jumpAction?.Enable();
 
         Cursor.lockState = CursorLockMode.Locked;
@@ -61,7 +58,6 @@ public class FPSController : MonoBehaviour
     void OnDisable()
     {
         _moveAction?.Disable();
-        _lookAction?.Disable();
         _jumpAction?.Disable();
 
         Cursor.lockState = CursorLockMode.None;
@@ -74,111 +70,135 @@ public class FPSController : MonoBehaviour
         HandleAnimations();
     }
 
-    void LateUpdate()
-    {
-        HandleCameraOrbit();
-    }
-
     void HandleMovement()
     {
-        
-
         Vector2 moveInput = _moveAction.ReadValue<Vector2>();
+
+        // Pojistka pro shop: Zastavení pohybu, pokud je odemčená myš
         if (Cursor.lockState != CursorLockMode.Locked) moveInput = Vector2.zero;
 
-        // --- Gravitace a Skok ---
-        if (_cc.isGrounded)
+        isClimbing = false;
+        bool hitWall = false; // Pojistka pro výšvih
+
+        Vector3 wallCheckRay = transform.position + Vector3.up * 0.7f;
+        Debug.DrawRay(wallCheckRay, transform.forward * wallCheckDistance, Color.red);
+
+        if (Physics.Raycast(wallCheckRay, transform.forward, out RaycastHit hit, wallCheckDistance))
         {
-            // Reset časovače timeoutu
-            _jumpTimeoutDelta = 0.0f;
-
-            // Udržení na zemi (negativní rychlost)
-            if (_velocity.y < 0.0f)
+            if (hit.collider.CompareTag("Climbable"))
             {
-                _velocity.y = -groundedStickForce;
+                hitWall = true;
+                if (moveInput.y > 0 && !_cc.isGrounded)
+                {
+                    isClimbing = true;
+                }
             }
+        }
 
-            // Skok - POUZE když jsme na zemi
+        // --- AUTOMATICKÝ VÝŠVIH ---
+        // Pokud jsme lezli, ale teď už zeď nevidíme a pořád držíme W
+        if (_wasClimbing && !hitWall && moveInput.y > 0)
+        {
+            _velocity.y = jumpSpeed * 0.7f; // Vymrštění nahoru
+        }
+
+        _wasClimbing = isClimbing; // Uložení stavu pro další snímek
+
+        if (isClimbing)
+        {
+            jumpCount = 0;
+            _velocity.y = climbSpeed;
+            Vector3 direction = transform.right * moveInput.x;
+            Vector3 finalDirection = direction * climbSpeed;
+
+            finalDirection.y = _velocity.y;
+
+            _cc.Move(finalDirection * Time.deltaTime);
             if (_jumpAction.triggered)
             {
+                isClimbing = false;
                 _velocity.y = jumpSpeed;
-
-                // Spuštění animace skoku
-                if (animator != null) animator.SetTrigger("Jump");
-
-                // Nastavíme timeout, aby nešlo skákat okamžitě znovu
-                _jumpTimeoutDelta = jumpTimeout;
             }
         }
         else
         {
-            // Jsme ve vzduchu - aplikujeme gravitaci
-            _velocity.y -= gravity * Time.deltaTime;
-
-            // Odečítáme časovač (pro jistotu, kdybychom chtěli přidat logiku později)
-            if (_jumpTimeoutDelta >= 0.0f)
+            // --- Gravitace a Skok ---
+            if (_cc.isGrounded)
             {
-                _jumpTimeoutDelta -= Time.deltaTime;
+                _jumpTimeoutDelta = 0.0f;
+                jumpCount = 0;
+
+                if (_velocity.y < 0.0f)
+                {
+                    _velocity.y = -groundedStickForce;
+                }
+
+                if (_jumpAction.triggered)
+                {
+                    _velocity.y = jumpSpeed;
+                    jumpCount++;
+                    if (animator != null) animator.SetTrigger("Jump");
+                    _jumpTimeoutDelta = jumpTimeout;
+                }
+            }
+            else
+            {
+                _velocity.y -= gravity * Time.deltaTime;
+
+                if (_jumpTimeoutDelta >= 0.0f)
+                {
+                    _jumpTimeoutDelta -= Time.deltaTime;
+                }
+
+                if (_jumpAction.triggered && hasDoubleJump && jumpCount < 2)
+                {
+                    _velocity.y = jumpSpeed;
+                    jumpCount++;
+                    if (animator != null) animator.SetTrigger("doublejump");
+                }
+            }
+
+            // --- Pohyb napojený na Cinemachine ---
+            // (Přesunuto sem, aby se to nepralo s pohybem při lezení)
+            Vector3 camForward = Camera.main.transform.forward;
+            Vector3 camRight = Camera.main.transform.right;
+
+            camForward.y = 0;
+            camRight.y = 0;
+            camForward.Normalize();
+            camRight.Normalize();
+
+            Vector3 moveDir = (camForward * moveInput.y + camRight * moveInput.x).normalized;
+
+            if (moveDir != Vector3.zero)
+            {
+                Quaternion targetRotation = Quaternion.LookRotation(moveDir);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+            }
+
+            Vector3 finalMove = moveDir * moveSpeed;
+            finalMove.y = _velocity.y;
+
+            _cc.Move(finalMove * Time.deltaTime);
+
+            // Odraz od stropu
+            if ((_cc.collisionFlags & CollisionFlags.Above) != 0)
+            {
+                if (_velocity.y > 0)
+                {
+                    _velocity.y = -2f;
+                }
             }
         }
-
-        // --- Pohyb ---
-        Vector3 camForward = playerCamera.forward;
-        Vector3 camRight = playerCamera.right;
-        camForward.y = 0;
-        camRight.y = 0;
-        camForward.Normalize();
-        camRight.Normalize();
-
-        Vector3 moveDir = (camForward * moveInput.y + camRight * moveInput.x).normalized;
-
-        if (moveDir != Vector3.zero)
-        {
-            Quaternion targetRotation = Quaternion.LookRotation(moveDir);
-            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
-        }
-
-        Vector3 finalMove = moveDir * moveSpeed;
-        finalMove.y = _velocity.y;
-
-        _cc.Move(finalMove * Time.deltaTime);
-
-        if ((_cc.collisionFlags & CollisionFlags.Above) != 0)
-        {
-            // Pokud letíme nahoru a narazíme, okamžitě to zrušíme
-            if (_velocity.y > 0)
-            {
-                _velocity.y = -2f; // Nastavíme malou rychlost dolů, abychom se odlepili
-            }
-        }
-
     }
 
-        void HandleAnimations()
-        {
-            if (animator == null) return;
+    void HandleAnimations()
+    {
+        if (animator == null) return;
 
-            float horizontalSpeed = new Vector3(_cc.velocity.x, 0, _cc.velocity.z).magnitude;
-            animator.SetFloat("Speed", horizontalSpeed);
-            animator.SetBool("IsGrounded", _cc.isGrounded);
-        }
-
-        void HandleCameraOrbit()
-        {
-            if (playerCamera == null || cameraTarget == null) return;
-
-        if (Cursor.lockState != CursorLockMode.Locked) return;
-
-        Vector2 lookInput = _lookAction.ReadValue<Vector2>();
-            _cameraYaw += lookInput.x * mouseSensitivity;
-            _cameraPitch -= lookInput.y * mouseSensitivity;
-            _cameraPitch = Mathf.Clamp(_cameraPitch, pitchLimits.x, pitchLimits.y);
-
-            Quaternion camRotation = Quaternion.Euler(_cameraPitch, _cameraYaw, 0);
-            Vector3 camPosition = cameraTarget.position + camRotation * new Vector3(0, 0, -cameraDistanceFromTarget);
-
-            playerCamera.rotation = camRotation;
-            playerCamera.position = camPosition;
-        }
+        float horizontalSpeed = new Vector3(_cc.velocity.x, 0, _cc.velocity.z).magnitude;
+        animator.SetFloat("Speed", horizontalSpeed);
+        animator.SetBool("IsGrounded", _cc.isGrounded);
+        animator.SetBool("IsClimbing", isClimbing);
     }
-
+}
