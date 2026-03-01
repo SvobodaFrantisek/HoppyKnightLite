@@ -20,36 +20,36 @@ public class FPSController : MonoBehaviour
     public bool isClimbing = false;
 
     // Přidáno pro detekci výšvihu
-    private bool _wasClimbing = false;
+    private bool wasClimbing = false;
 
     [Header("Animation")]
     public Animator animator;
 
     // Interní proměnné
-    private PlayerInput _playerInput;
-    private InputAction _moveAction;
-    private InputAction _jumpAction;
-    private CharacterController _cc;
-    private Vector3 _velocity;
+    private PlayerInput playerInput;
+    private InputAction moveAction;
+    private InputAction jumpAction;
+    private CharacterController cc;
+    private Vector3 velocity;
 
     // Časovač pro skok
-    private float _jumpTimeoutDelta;
+    private float jumpTimeoutDelta;
 
     void Awake()
     {
-        _cc = GetComponent<CharacterController>();
-        _playerInput = GetComponent<PlayerInput>();
+        cc = GetComponent<CharacterController>();
+        playerInput = GetComponent<PlayerInput>();
 
         if (animator == null) animator = GetComponentInChildren<Animator>();
     }
 
     void OnEnable()
     {
-        _moveAction = _playerInput.actions.FindAction("Move");
-        _jumpAction = _playerInput.actions.FindAction("Jump");
+        moveAction = playerInput.actions.FindAction("Move");
+        jumpAction = playerInput.actions.FindAction("Jump");
 
-        _moveAction?.Enable();
-        _jumpAction?.Enable();
+        moveAction?.Enable();
+        jumpAction?.Enable();
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
@@ -57,8 +57,8 @@ public class FPSController : MonoBehaviour
 
     void OnDisable()
     {
-        _moveAction?.Disable();
-        _jumpAction?.Disable();
+        moveAction?.Disable();
+        jumpAction?.Disable();
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
@@ -72,15 +72,18 @@ public class FPSController : MonoBehaviour
 
     void HandleMovement()
     {
-        Vector2 moveInput = _moveAction.ReadValue<Vector2>();
+        Vector2 moveInput = moveAction.ReadValue<Vector2>();
 
         // Pojistka pro shop: Zastavení pohybu, pokud je odemčená myš
         if (Cursor.lockState != CursorLockMode.Locked) moveInput = Vector2.zero;
 
         isClimbing = false;
-        bool hitWall = false; // Pojistka pro výšvih
+        bool hitWall = false;
 
-        Vector3 wallCheckRay = transform.position + Vector3.up * 0.7f;
+        
+        Vector3 wallNormal = Vector3.zero;
+
+        Vector3 wallCheckRay = transform.position + Vector3.up * 0.5f;
         Debug.DrawRay(wallCheckRay, transform.forward * wallCheckDistance, Color.red);
 
         if (Physics.Raycast(wallCheckRay, transform.forward, out RaycastHit hit, wallCheckDistance))
@@ -88,7 +91,9 @@ public class FPSController : MonoBehaviour
             if (hit.collider.CompareTag("Climbable"))
             {
                 hitWall = true;
-                if (moveInput.y > 0 && !_cc.isGrounded)
+                wallNormal = hit.normal; // Uložíme si úhel zdi
+
+                if (moveInput.y > 0 && !cc.isGrounded)
                 {
                     isClimbing = true;
                 }
@@ -97,69 +102,78 @@ public class FPSController : MonoBehaviour
 
         // --- AUTOMATICKÝ VÝŠVIH ---
         // Pokud jsme lezli, ale teď už zeď nevidíme a pořád držíme W
-        if (_wasClimbing && !hitWall && moveInput.y > 0)
+        if (wasClimbing && !hitWall && moveInput.y > 0)
         {
-            _velocity.y = jumpSpeed * 0.7f; // Vymrštění nahoru
+            velocity.y = jumpSpeed * 0.6f; // Vymrštění nahoru
         }
 
-        _wasClimbing = isClimbing; // Uložení stavu pro další snímek
+        wasClimbing = isClimbing; // Uložení stavu pro další snímek
 
         if (isClimbing)
         {
             jumpCount = 0;
-            _velocity.y = climbSpeed;
+
+            // --- PŘIDÁNO: NATOČENÍ ČELEM KE ZDI ---
+            if (wallNormal != Vector3.zero)
+            {
+                Vector3 lookDir = -wallNormal;
+                lookDir.y = 0; // Zabráníme naklánění nahoru/dolů
+                Quaternion targetWallRotation = Quaternion.LookRotation(lookDir);
+                transform.rotation = Quaternion.Slerp(transform.rotation, targetWallRotation, rotationSpeed * Time.deltaTime);
+            }
+            
+
+            velocity.y = climbSpeed;
             Vector3 direction = transform.right * moveInput.x;
             Vector3 finalDirection = direction * climbSpeed;
 
-            finalDirection.y = _velocity.y;
+            finalDirection.y = velocity.y;
 
-            _cc.Move(finalDirection * Time.deltaTime);
-            if (_jumpAction.triggered)
+            cc.Move(finalDirection * Time.deltaTime);
+            if (jumpAction.triggered)
             {
-                isClimbing = false;
-                _velocity.y = jumpSpeed;
+                
             }
         }
         else
         {
             // --- Gravitace a Skok ---
-            if (_cc.isGrounded)
+            if (cc.isGrounded)
             {
-                _jumpTimeoutDelta = 0.0f;
+                jumpTimeoutDelta = 0.0f;
                 jumpCount = 0;
 
-                if (_velocity.y < 0.0f)
+                if (velocity.y < 0.0f)
                 {
-                    _velocity.y = -groundedStickForce;
+                    velocity.y = -groundedStickForce;
                 }
 
-                if (_jumpAction.triggered)
+                if (jumpAction.triggered)
                 {
-                    _velocity.y = jumpSpeed;
+                    velocity.y = jumpSpeed;
                     jumpCount++;
                     if (animator != null) animator.SetTrigger("Jump");
-                    _jumpTimeoutDelta = jumpTimeout;
+                    jumpTimeoutDelta = jumpTimeout;
                 }
             }
             else
             {
-                _velocity.y -= gravity * Time.deltaTime;
+                velocity.y -= gravity * Time.deltaTime;
 
-                if (_jumpTimeoutDelta >= 0.0f)
+                if (jumpTimeoutDelta >= 0.0f)
                 {
-                    _jumpTimeoutDelta -= Time.deltaTime;
+                    jumpTimeoutDelta -= Time.deltaTime;
                 }
 
-                if (_jumpAction.triggered && hasDoubleJump && jumpCount < 2)
+                if (jumpAction.triggered && hasDoubleJump && jumpCount < 2)
                 {
-                    _velocity.y = jumpSpeed;
+                    velocity.y = jumpSpeed;
                     jumpCount++;
                     if (animator != null) animator.SetTrigger("doublejump");
                 }
             }
 
             // --- Pohyb napojený na Cinemachine ---
-            // (Přesunuto sem, aby se to nepralo s pohybem při lezení)
             Vector3 camForward = Camera.main.transform.forward;
             Vector3 camRight = Camera.main.transform.right;
 
@@ -177,16 +191,16 @@ public class FPSController : MonoBehaviour
             }
 
             Vector3 finalMove = moveDir * moveSpeed;
-            finalMove.y = _velocity.y;
+            finalMove.y = velocity.y;
 
-            _cc.Move(finalMove * Time.deltaTime);
+            cc.Move(finalMove * Time.deltaTime);
 
             // Odraz od stropu
-            if ((_cc.collisionFlags & CollisionFlags.Above) != 0)
+            if ((cc.collisionFlags & CollisionFlags.Above) != 0)
             {
-                if (_velocity.y > 0)
+                if (velocity.y > 0)
                 {
-                    _velocity.y = -2f;
+                    velocity.y = -2f;
                 }
             }
         }
@@ -196,9 +210,9 @@ public class FPSController : MonoBehaviour
     {
         if (animator == null) return;
 
-        float horizontalSpeed = new Vector3(_cc.velocity.x, 0, _cc.velocity.z).magnitude;
+        float horizontalSpeed = new Vector3(cc.velocity.x, 0, cc.velocity.z).magnitude;
         animator.SetFloat("Speed", horizontalSpeed);
-        animator.SetBool("IsGrounded", _cc.isGrounded);
+        animator.SetBool("IsGrounded", cc.isGrounded);
         animator.SetBool("IsClimbing", isClimbing);
     }
 }
