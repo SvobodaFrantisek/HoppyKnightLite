@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 [RequireComponent(typeof(CharacterController))]
@@ -19,37 +19,49 @@ public class FPSController : MonoBehaviour
     public float wallCheckDistance = 0.5f;
     public bool isClimbing = false;
 
-    // Přidáno pro detekci výšvihu
+    [Header("Dodge Settings")]
+    public float dodgeDistance = 2.5f;
+    public float dodgeDuration = 0.18f;
+    public float dodgeCooldown = 0.6f;
+
     private bool wasClimbing = false;
 
     [Header("Animation")]
     public Animator animator;
 
-    // Interní proměnné
     private PlayerInput playerInput;
     private InputAction moveAction;
     private InputAction jumpAction;
+    private InputAction dodgeAction;
     private CharacterController cc;
     private Vector3 velocity;
 
-    // Časovač pro skok
     private float jumpTimeoutDelta;
+    private float dodgeTimer;
+    private float dodgeCooldownTimer;
+    private bool isDodging;
+    private Vector3 dodgeDirection;
+
+    private float DodgeSpeed => dodgeDuration > 0f ? dodgeDistance / dodgeDuration : 0f;
 
     void Awake()
     {
         cc = GetComponent<CharacterController>();
         playerInput = GetComponent<PlayerInput>();
 
-        if (animator == null) animator = GetComponentInChildren<Animator>();
+        if (animator == null)
+            animator = GetComponentInChildren<Animator>();
     }
 
     void OnEnable()
     {
         moveAction = playerInput.actions.FindAction("Move");
         jumpAction = playerInput.actions.FindAction("Jump");
+        dodgeAction = playerInput.actions.FindAction("Sprint");
 
         moveAction?.Enable();
         jumpAction?.Enable();
+        dodgeAction?.Enable();
 
         Cursor.lockState = CursorLockMode.Locked;
         Cursor.visible = false;
@@ -59,6 +71,12 @@ public class FPSController : MonoBehaviour
     {
         moveAction?.Disable();
         jumpAction?.Disable();
+        dodgeAction?.Disable();
+
+        if (animator != null)
+        {
+            animator.ResetTrigger("Dodge");
+        }
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
@@ -72,15 +90,16 @@ public class FPSController : MonoBehaviour
 
     void HandleMovement()
     {
-        Vector2 moveInput = moveAction.ReadValue<Vector2>();
+        Vector2 moveInput = moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
 
-        // Pojistka pro shop: Zastavení pohybu, pokud je odemčená myš
-        if (Cursor.lockState != CursorLockMode.Locked) moveInput = Vector2.zero;
+        if (Cursor.lockState != CursorLockMode.Locked)
+            moveInput = Vector2.zero;
+
+        if (dodgeCooldownTimer > 0f)
+            dodgeCooldownTimer -= Time.deltaTime;
 
         isClimbing = false;
         bool hitWall = false;
-
-        
         Vector3 wallNormal = Vector3.zero;
 
         Vector3 wallCheckRay = transform.position + Vector3.up * 0.5f;
@@ -91,68 +110,62 @@ public class FPSController : MonoBehaviour
             if (hit.collider.CompareTag("Climbable"))
             {
                 hitWall = true;
-                wallNormal = hit.normal; // Uložíme si úhel zdi
+                wallNormal = hit.normal;
 
                 if (moveInput.y > 0 && !cc.isGrounded)
-                {
                     isClimbing = true;
-                }
             }
         }
 
-        // --- AUTOMATICKÝ VÝŠVIH ---
-        // Pokud jsme lezli, ale teď už zeď nevidíme a pořád držíme W
         if (wasClimbing && !hitWall && moveInput.y > 0)
         {
-            velocity.y = jumpSpeed * 0.6f; // Vymrštění nahoru
+            velocity.y = jumpSpeed * 0.6f;
         }
 
-        wasClimbing = isClimbing; // Uložení stavu pro další snímek
+        wasClimbing = isClimbing;
 
         if (isClimbing)
         {
             jumpCount = 0;
 
-            // --- PŘIDÁNO: NATOČENÍ ČELEM KE ZDI ---
             if (wallNormal != Vector3.zero)
             {
                 Vector3 lookDir = -wallNormal;
-                lookDir.y = 0; // Zabráníme naklánění nahoru/dolů
-                Quaternion targetWallRotation = Quaternion.LookRotation(lookDir);
-                transform.rotation = Quaternion.Slerp(transform.rotation, targetWallRotation, rotationSpeed * Time.deltaTime);
+                lookDir.y = 0f;
+
+                if (lookDir != Vector3.zero)
+                {
+                    Quaternion targetWallRotation = Quaternion.LookRotation(lookDir);
+                    transform.rotation = Quaternion.Slerp(transform.rotation, targetWallRotation, rotationSpeed * Time.deltaTime);
+                }
             }
-            
 
             velocity.y = climbSpeed;
+
             Vector3 direction = transform.right * moveInput.x;
             Vector3 finalDirection = direction * climbSpeed;
-
             finalDirection.y = velocity.y;
 
             cc.Move(finalDirection * Time.deltaTime);
-            if (jumpAction.triggered)
-            {
-                
-            }
         }
         else
         {
-            // --- Gravitace a Skok ---
             if (cc.isGrounded)
             {
                 jumpTimeoutDelta = 0.0f;
                 jumpCount = 0;
 
                 if (velocity.y < 0.0f)
-                {
                     velocity.y = -groundedStickForce;
-                }
 
-                if (jumpAction.triggered)
+                if (jumpAction != null && jumpAction.WasPressedThisFrame())
                 {
                     velocity.y = jumpSpeed;
                     jumpCount++;
-                    if (animator != null) animator.SetTrigger("Jump");
+
+                    if (animator != null)
+                        animator.SetTrigger("Jump");
+
                     jumpTimeoutDelta = jumpTimeout;
                 }
             }
@@ -161,28 +174,62 @@ public class FPSController : MonoBehaviour
                 velocity.y -= gravity * Time.deltaTime;
 
                 if (jumpTimeoutDelta >= 0.0f)
-                {
                     jumpTimeoutDelta -= Time.deltaTime;
-                }
 
-                if (jumpAction.triggered && hasDoubleJump && jumpCount < 2)
+                if (jumpAction != null && jumpAction.WasPressedThisFrame() && hasDoubleJump && jumpCount < 2)
                 {
                     velocity.y = jumpSpeed;
                     jumpCount++;
-                    if (animator != null) animator.SetTrigger("doublejump");
+
+                    if (animator != null)
+                        animator.SetTrigger("doublejump");
                 }
             }
 
-            // --- Pohyb napojený na Cinemachine ---
             Vector3 camForward = Camera.main.transform.forward;
             Vector3 camRight = Camera.main.transform.right;
 
-            camForward.y = 0;
-            camRight.y = 0;
+            camForward.y = 0f;
+            camRight.y = 0f;
             camForward.Normalize();
             camRight.Normalize();
 
             Vector3 moveDir = (camForward * moveInput.y + camRight * moveInput.x).normalized;
+
+            if (!isDodging &&
+                dodgeAction != null &&
+                dodgeAction.WasPressedThisFrame() &&
+                cc.isGrounded &&
+                dodgeCooldownTimer <= 0f)
+            {
+                isDodging = true;
+                dodgeTimer = dodgeDuration;
+                dodgeCooldownTimer = dodgeCooldown;
+
+                dodgeDirection = moveDir != Vector3.zero ? moveDir : transform.forward;
+                dodgeDirection.y = 0f;
+                dodgeDirection.Normalize();
+
+                if (animator != null)
+                {
+                    animator.ResetTrigger("Dodge");
+                    animator.SetTrigger("Dodge");
+                }
+            }
+
+            if (isDodging)
+            {
+                dodgeTimer -= Time.deltaTime;
+                moveDir = dodgeDirection;
+
+                if (dodgeTimer <= 0f)
+                {
+                    isDodging = false;
+
+                    if (animator != null)
+                        animator.ResetTrigger("Dodge");
+                }
+            }
 
             if (moveDir != Vector3.zero)
             {
@@ -190,27 +237,28 @@ public class FPSController : MonoBehaviour
                 transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
             }
 
-            Vector3 finalMove = moveDir * moveSpeed;
+            float currentSpeed = isDodging ? DodgeSpeed : moveSpeed;
+
+            Vector3 finalMove = moveDir * currentSpeed;
             finalMove.y = velocity.y;
 
             cc.Move(finalMove * Time.deltaTime);
 
-            // Odraz od stropu
             if ((cc.collisionFlags & CollisionFlags.Above) != 0)
             {
                 if (velocity.y > 0)
-                {
                     velocity.y = -2f;
-                }
             }
         }
     }
 
     void HandleAnimations()
     {
-        if (animator == null) return;
+        if (animator == null)
+            return;
 
         float horizontalSpeed = new Vector3(cc.velocity.x, 0, cc.velocity.z).magnitude;
+
         animator.SetFloat("Speed", horizontalSpeed);
         animator.SetBool("IsGrounded", cc.isGrounded);
         animator.SetBool("IsClimbing", isClimbing);

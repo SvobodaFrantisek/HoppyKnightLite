@@ -2832,7 +2832,7 @@ MonoBehaviour:
   m_ActionEvents: []
   m_NeverAutoSwitchControlSchemes: 0
   m_DefaultControlScheme: 
-  m_DefaultActionMap: 
+  m_DefaultActionMap: Player
   m_SplitScreenIndex: -1
   m_Camera: {fileID: 0}
 --- !u!114 &739887122
@@ -2858,6 +2858,9 @@ MonoBehaviour:
   climbSpeed: 1.5
   wallCheckDistance: 0.5
   isClimbing: 0
+  dodgeDistance: 5
+  dodgeDuration: 0.4
+  dodgeCooldown: 0.6
   animator: {fileID: 0}
 --- !u!143 &739887123
 CharacterController:
