@@ -77,7 +77,8 @@ public class Coin : MonoBehaviour
         if (gameManager != null)
         {
             gameManager.AddCoin(1);
+            Destroy(gameObject);
+
         }
-        Destroy(gameObject);
     }
 }

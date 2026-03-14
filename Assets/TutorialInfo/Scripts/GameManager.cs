@@ -6,6 +6,8 @@ public class GameManager : MonoBehaviour
 
     public HUDmanager hudManager;
     public int coins = 0;
+    public int gems = 0;
+    public int remainGems = 10;
     public int health = 100;
     void Start()
     {
@@ -31,6 +33,21 @@ public class GameManager : MonoBehaviour
         }
 
             Debug.Log("Coins: " + coins);
+    }
+
+    public void addGem(int amount)
+    {
+        gems += amount; 
+
+        if (hudManager != null)
+        {
+            hudManager.UpdateGems(gems, remainGems);
+        }
+        else
+        {
+            Debug.LogError("HUDmanager nenalezen, nelze aktualizovat zobrazení gemů.");
+        }
+        Debug.Log("Gems: " + gems);
     }
 
     public void buyItem(int cost)
