@@ -1,40 +1,33 @@
 using TMPro;
-using Unity.VisualScripting;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class HUDmanager : MonoBehaviour
 {
-   
-    public TMP_Text coinText;
     public Slider healthBar;
     public TMP_Text gemText;
-    void Start()
-    {
-        
 
+    public void SetHealthMax(int maxHealth)
+    {
+        if (healthBar != null)
+        {
+            healthBar.maxValue = maxHealth;
+        }
     }
 
-    
-    void Update()
-    {
-       
-
-    }
-
-
-    public void UpdateCoins(int coins)
-    {
-        coinText.text = "coins: "  + coins;
-
-    }
     public void UpdateGems(int gems, int remainGems)
     {
-        gemText.text = "gems: " + gems + "/" + remainGems;
+        if (gemText != null)
+        {
+            gemText.text = "Gems: " + gems + "/" + remainGems;
+        }
     }
 
     public void UpdateHealth(int health)
     {
-        healthBar.value = health;
+        if (healthBar != null)
+        {
+            healthBar.value = Mathf.Clamp(health, 0f, healthBar.maxValue);
+        }
     }
 }

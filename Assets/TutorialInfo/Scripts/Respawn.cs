@@ -8,10 +8,12 @@ public class Respawn : MonoBehaviour
     public float fallLimitY = -20f;
 
     private CharacterController cc;
+    private FPSController fpsController;
 
     void Awake()
     {
         cc = GetComponent<CharacterController>();
+        fpsController = GetComponent<FPSController>();
     }
 
     void Update()
@@ -47,5 +49,8 @@ public class Respawn : MonoBehaviour
 
         if (cc != null)
             cc.enabled = true;
+
+        if (fpsController != null)
+            fpsController.ResetMovementState();
     }
 }

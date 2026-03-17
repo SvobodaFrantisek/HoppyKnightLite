@@ -106,6 +106,29 @@ public class FPSController : MonoBehaviour
         }
     }
 
+    public void ResetMovementState()
+    {
+        velocity = Vector3.zero;
+        jumpCount = 0;
+        jumpTimeoutDelta = 0f;
+        dodgeTimer = 0f;
+        dodgeCooldownTimer = 0f;
+        isDodging = false;
+        isClimbing = false;
+        wasClimbing = false;
+        inputLocked = false;
+        dodgeDirection = Vector3.zero;
+
+        if (animator != null)
+        {
+            animator.ResetTrigger("Jump");
+            animator.ResetTrigger("doublejump");
+            animator.ResetTrigger("Dodge");
+            animator.SetFloat("Speed", 0f);
+            animator.SetBool("IsClimbing", false);
+        }
+    }
+
     void HandleMovement()
     {
         Vector2 moveInput = moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;

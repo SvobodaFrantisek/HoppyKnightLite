@@ -1,14 +1,18 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
+using System.Collections.Generic;
 
 public class CombatScript : MonoBehaviour
 {
-   
     public float attackCooldown = 0.8f;
+    public int attackDamage = 1;
+    public float attackDistance = 1.3f;
+    public float attackRadius = 0.8f;
+    public Transform attackOrigin;
+    public LayerMask attackLayers = ~0;
     public Animator animator;
 
-   
-    public GameObject traileffect; 
+    public GameObject traileffect;
 
     private PlayerInput _playerInput;
     private InputAction _attackAction;
@@ -55,9 +59,27 @@ public class CombatScript : MonoBehaviour
         {
             animator.SetTrigger("Attack");
         }
+
+        PerformAttackHit();
     }
 
-   
+    void PerformAttackHit()
+    {
+        Vector3 origin = attackOrigin != null ? attackOrigin.position : transform.position + Vector3.up;
+        Vector3 hitCenter = origin + transform.forward * attackDistance;
+        Collider[] hits = Physics.OverlapSphere(hitCenter, attackRadius, attackLayers, QueryTriggerInteraction.Ignore);
+        HashSet<EnemyController> damagedEnemies = new HashSet<EnemyController>();
+
+        foreach (Collider hit in hits)
+        {
+            EnemyController enemy = hit.GetComponentInParent<EnemyController>();
+
+            if (enemy != null && damagedEnemies.Add(enemy))
+            {
+                enemy.TakeDamage(attackDamage);
+            }
+        }
+    }
 
     public void TrailOn()
     {
@@ -67,5 +89,14 @@ public class CombatScript : MonoBehaviour
     public void TrailOff()
     {
         if (traileffect != null) traileffect.SetActive(false);
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        Vector3 origin = attackOrigin != null ? attackOrigin.position : transform.position + Vector3.up;
+        Vector3 hitCenter = origin + transform.forward * attackDistance;
+
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(hitCenter, attackRadius);
     }
 }
