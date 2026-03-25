@@ -68,14 +68,13 @@ public class PortalScript : MonoBehaviour
         // Kratka pauza pro animaci / efekty pred nactenim dalsi sceny.
         yield return new WaitForSeconds(portalDelay);
 
-        if (nextSceneName == null)
-        {
-          Debug.LogError("Next scene name is not set in the PortalScript.");
+        string sceneToLoad = string.IsNullOrWhiteSpace(nextSceneName) ? "WinScene" : nextSceneName;
 
-        }
         // Samotne dokonceni levelu.
-        SceneManager.LoadScene(nextSceneName);  
-
+        SceneManager.LoadScene(sceneToLoad);
     }
 
 }
+
+
+

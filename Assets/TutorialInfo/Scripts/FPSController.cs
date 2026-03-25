@@ -36,6 +36,8 @@ public class FPSController : MonoBehaviour
     private InputAction jumpAction;
     private InputAction dodgeAction;
     private CharacterController cc;
+    private MovingIsland currentMovingIsland;
+    private float animationSpeed;
     private Vector3 velocity;
 
     private float jumpTimeoutDelta;
@@ -118,6 +120,8 @@ public class FPSController : MonoBehaviour
         wasClimbing = false;
         inputLocked = false;
         dodgeDirection = Vector3.zero;
+        currentMovingIsland = null;
+        animationSpeed = 0f;
 
         if (animator != null)
         {
@@ -132,11 +136,14 @@ public class FPSController : MonoBehaviour
     void HandleMovement()
     {
         Vector2 moveInput = moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
+        Vector3 platformDisplacement = GetPlatformDisplacement();
 
         // Pri shopu nebo finish sekvenci nechceme brat movement input,
         // ale ostatni cast controlleru musi bezet dal.
         if (inputLocked || Cursor.lockState != CursorLockMode.Locked)
             moveInput = Vector2.zero;
+
+        float inputMagnitude = Mathf.Clamp01(moveInput.magnitude);
 
         if (dodgeCooldownTimer > 0f)
             dodgeCooldownTimer -= Time.deltaTime;
@@ -193,7 +200,9 @@ public class FPSController : MonoBehaviour
             Vector3 finalDirection = direction * climbSpeed;
             finalDirection.y = velocity.y;
 
-            cc.Move(finalDirection * Time.deltaTime);
+            animationSpeed = inputMagnitude > 0.01f ? climbSpeed : 0f;
+            cc.Move(platformDisplacement + finalDirection * Time.deltaTime);
+            RefreshGroundedPlatform();
         }
         else
         {
@@ -292,11 +301,13 @@ public class FPSController : MonoBehaviour
             }
 
             float currentSpeed = isDodging ? DodgeSpeed : moveSpeed;
+            animationSpeed = isDodging ? currentSpeed : inputMagnitude * currentSpeed;
 
             Vector3 finalMove = moveDir * currentSpeed;
             finalMove.y = velocity.y;
 
-            cc.Move(finalMove * Time.deltaTime);
+            cc.Move(platformDisplacement + finalMove * Time.deltaTime);
+            RefreshGroundedPlatform();
 
             if ((cc.collisionFlags & CollisionFlags.Above) != 0)
             {
@@ -304,6 +315,48 @@ public class FPSController : MonoBehaviour
                     velocity.y = -2f;
             }
         }
+    }
+
+    Vector3 GetPlatformDisplacement()
+    {
+        if (currentMovingIsland == null)
+            return Vector3.zero;
+
+        // Kdyz hrac aktivne leti nahoru po skoku, platforma ho uz nema tahat s sebou.
+        if (velocity.y > 0.05f)
+            return Vector3.zero;
+
+        return currentMovingIsland.FrameDelta;
+    }
+
+    void RefreshGroundedPlatform()
+    {
+        if (!cc.enabled)
+        {
+            currentMovingIsland = null;
+            return;
+        }
+
+        if (!cc.isGrounded && velocity.y > 0.05f)
+        {
+            currentMovingIsland = null;
+            return;
+        }
+
+        Vector3 castOrigin = transform.TransformPoint(cc.center) + Vector3.up * 0.05f;
+        float castRadius = Mathf.Max(0.05f, cc.radius - cc.skinWidth);
+        float castDistance = Mathf.Max(0.3f, (cc.height * 0.5f) - castRadius + cc.skinWidth + 0.25f);
+
+        if (Physics.SphereCast(castOrigin, castRadius, Vector3.down, out RaycastHit hit, castDistance, ~0, QueryTriggerInteraction.Ignore))
+        {
+            if (hit.collider != cc)
+            {
+                currentMovingIsland = hit.collider.GetComponentInParent<MovingIsland>();
+                return;
+            }
+        }
+
+        currentMovingIsland = null;
     }
 
     void HandleAnimations()
@@ -320,9 +373,7 @@ public class FPSController : MonoBehaviour
             return;
         }
 
-        float horizontalSpeed = new Vector3(cc.velocity.x, 0, cc.velocity.z).magnitude;
-
-        animator.SetFloat("Speed", horizontalSpeed);
+        animator.SetFloat("Speed", animationSpeed);
         animator.SetBool("IsGrounded", cc.isGrounded);
         animator.SetBool("IsClimbing", isClimbing);
     }
