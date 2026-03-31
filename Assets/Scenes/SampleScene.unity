@@ -6090,7 +6090,7 @@ MonoBehaviour:
   rotationSpeed: 10
   jumpSpeed: 10
   gravity: 25
-  groundedStickForce: 5
+  groundedStickForce: 8
   jumpTimeout: 0.5
   hasDoubleJump: 0
   jumpCount: 0
